@@ -814,8 +814,17 @@ target_link_libraries(_zrythm_all_compile_options INTERFACE zrythm::sanitizers)
 
 CPMUsePackageLock(package-lock.cmake)
 
-find_package(nlohmann_json REQUIRED)
-find_package(nlohmann_json_schema_validator REQUIRED)
+# ORVIA WebAssembly feasibility: the native Conan dependency graph is not
+# installed for emcmake builds. Use Zrythm's *existing pinned* CPM definitions
+# for the portable JSON and JSON schema libraries, preserving normal native
+# Conan find_package() behavior unchanged on Windows/Linux/macOS.
+if(EMSCRIPTEN)
+  CPMGetPackage(nlohmann_json)
+  CPMGetPackage(nlohmann_json_schema_validator)
+else()
+  find_package(nlohmann_json REQUIRED)
+  find_package(nlohmann_json_schema_validator REQUIRED)
+endif()
 
 CPMGetPackage(clap)
 CPMGetPackage(clap-helpers)
