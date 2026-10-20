@@ -51,3 +51,18 @@ Created `scripts/orvia-wasm-build.sh` (commit `83a769a50544b31f628c32b9a8f84acf1
 
 **Chưa có:** bundle .wasm của ứng dụng Zrythm, browser GUI chạy thật, âm thanh/MIDI đã QA, hoặc URL Cloudflare tương tác. Không deploy ảnh chụp và không phát hành bản giả. Việc tiếp theo chỉ sửa dựa trên lỗi thực từ lần #2.
 
+
+
+### Follow-up source attempts #2 and #3, new blocker (#4 pending)
+
+**Run #2** https://github.com/Gamevalentine/zrythm/actions/runs/39450673455 — completed/failure. `nlohmann_json` and `nlohmann_json_schema_validator` PASS through CPM; CMake continued CLAP/VST3/JUCE, then stopped in `ext/CMakeLists.txt:91`: `Could NOT find Freetype` (plus Fontconfig). Root cause: Emscripten sets `UNIX`, and Zrythm's `OS_GNU` heuristic incorrectly enabled native Linux-only JUCE dependencies.
+
+**Fix** commit `e02731cc51f2f94e40a21e83c7690dce712cc632`: platform gate `if(UNIX AND NOT APPLE AND NOT EMSCRIPTEN)`, and browser branch does not use `xdg-open`. Native Windows/Linux behavior stays unchanged.
+
+**Run #3** https://github.com/Gamevalentine/zrythm/actions/runs/39451311182 — completed/failure. Passes JSON/CLAP/VST3/JUCE configuration and native Freetype gate, then fails at `CMakeLists.txt:844 find_package(SndFile REQUIRED)`. No WebAssembly-compatible libsndfile target supplied by desktop Conan flow.
+
+**Fix** commit `20c41051f83071a2c2e9ec4ede57065878aee178`: `if(EMSCRIPTEN) CPMGetPackage(SndFile)` using the repository's existing pinned source declaration, else native `find_package(SndFile)`; avoids cross-linking host Linux .so.
+
+**Run #4** https://github.com/Gamevalentine/zrythm/actions/runs/39452016659 queued at time of entry. Anticipated major blocker: `find_package(lilv REQUIRED)` and `src/plugins/CMakeLists.txt` unconditionally compile LV2 native plugin sources and link `lilv::lilv`; `src/gui/backend/zrythm_application.cpp` initializes JUCE desktop audio devices, scanning and native plugin managers. These need a real browser-adapter design rather than fake stubbed UI; no architecture port has been claimed.
+
+**Status remains NOT BUILT:** no .wasm bundle, no browser DAW, no screenshots claimed as DAW. All source changes in separate WebAssembly branch; no production/master edits.
