@@ -1,0 +1,117 @@
+# SPDX-FileCopyrightText: © 2026 ORVIA / LUNOR MUSIC contributors
+# SPDX-License-Identifier: LicenseRef-ZrythmLicense
+#
+# One experimental baseline run against the unmodified Zrythm native source.
+# Scope is the ORVIA branch only; standard free public-repo runner.
+name: "ORVIA | Windows native baseline"
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/orvia-desktop-foundation
+    paths:
+      - .github/workflows/orvia-windows-baseline.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orvia-windows-baseline
+  cancel-in-progress: true
+
+jobs:
+  native-windows:
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      CONAN_NON_INTERACTIVE: "1"
+      VSLANG: "1033"
+      PYTHONUTF8: "1"
+      CMAKE_BUILD_PARALLEL_LEVEL: "3"
+      CPM_SOURCE_CACHE: "${{ github.workspace }}/.cache/CPM"
+    steps:
+      - name: Checkout pinned native code (including Qt Conan recipe submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Inspect Windows runner and version requirements
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) { throw "Visual Studio vswhere was not found" }
+          $installPath = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()
+          if (-not $installPath) { throw "Native MSVC C++ toolchain is missing" }
+          $devshell = Join-Path $installPath "Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Import-Module $devshell -ErrorAction Stop
+          Enter-VsDevShell -VsInstallPath $installPath -SkipAutomaticLocation -DevCmdArguments "-arch=x64" | Out-Null
+          cl.exe 2>&1 | Select-Object -First 7
+          $version = & cl.exe 2>&1 | Select-String -Pattern 'Version (\d+\.\d+)' | Select-Object -First 1
+          Write-Host "Visual Studio: $installPath"
+          Write-Host "MSVC: $version"
+          Write-Host "Free disk (GB): $([math]::Round((Get-PSDrive C).Free / 1GB, 1))"
+          if (-not (Test-Path "ext/conan-center-index/recipes/qt/6.x.x/conanfile.py")) {
+            throw "Pinned Qt recipe submodule is missing; refusing an unpinned dependency build"
+          }
+
+      - name: Install upstream pinned Python build tools
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Configure Conan and dependencies (upstream lockfile)
+        timeout-minutes: 140
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installPath = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()
+          Import-Module (Join-Path $installPath "Common7\Tools\Microsoft.VisualStudio.DevShell.dll")
+          Enter-VsDevShell -VsInstallPath $installPath -SkipAutomaticLocation -DevCmdArguments "-arch=x64" | Out-Null
+          python -m pip install -r requirements.txt
+          if ($LASTEXITCODE -ne 0) { throw "Python pinned build-tool install failed" }
+          conan config install conan
+          if ($LASTEXITCODE -ne 0) { throw "Conan configuration failed" }
+          $remotes = conan remote list
+          if (-not ($remotes -match 'conan-local-index')) {
+            conan remote add conan-local-index ext/conan-center-index
+            if ($LASTEXITCODE -ne 0) { throw "Conan remote registration failed" }
+          }
+          python tools/export_conan_recipes.py
+          if ($LASTEXITCODE -ne 0) { throw "Pinned Conan recipe export failed" }
+          Write-Host "::group::Install Zrythm's native Windows dependencies"
+          conan install . -pr:h msvc_release -pr:b msvc_release --build=missing --lockfile=conan.lock
+          if ($LASTEXITCODE -ne 0) { throw "Conan dependency graph/build failed (see full log)" }
+          Write-Host "::endgroup::"
+
+      - name: Configure and compile UNMODIFIED Zrythm for Windows
+        timeout-minutes: 35
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installPath = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()
+          Import-Module (Join-Path $installPath "Common7\Tools\Microsoft.VisualStudio.DevShell.dll")
+          Enter-VsDevShell -VsInstallPath $installPath -SkipAutomaticLocation -DevCmdArguments "-arch=x64" | Out-Null
+          cmake --preset default -DZRYTHM_USER_MANUAL=OFF -DZRYTHM_TESTS=OFF -DZRYTHM_QML_TESTS=OFF -DZRYTHM_BENCHMARKS=OFF
+          if ($LASTEXITCODE -ne 0) { throw "CMake configuration failed" }
+          cmake --build conanbuild/Release --config Release --parallel 3
+          if ($LASTEXITCODE -ne 0) { throw "Native compilation failed" }
+          $exe = Get-ChildItem "conanbuild/Release" -Filter "zrythm.exe" -Recurse -File | Select-Object -First 1
+          if (-not $exe) { throw "Compilation returned success but zrythm.exe was not found" }
+          Write-Host "Native executable produced at $($exe.FullName), size $($exe.Length)"
+          (Get-FileHash -Algorithm SHA256 $exe.FullName).Hash | Out-File "$env:GITHUB_STEP_SUMMARY" -Append
+          "NATIVE WINDOWS EXECUTABLE: `$($exe.FullName)`" | Out-File "$env:GITHUB_STEP_SUMMARY" -Append
+
+      - name: Report QA boundary
+        if: always()
+        run: |
+          "## ORVIA Windows baseline attempt" | Out-File "$env:GITHUB_STEP_SUMMARY" -Append
+          "- Source: unmodified Zrythm fork (ORVIA docs/workflow only)." | Out-File "$env:GITHUB_STEP_SUMMARY" -Append
+          "- This job may test compiling, but does not prove GUI/audio/VST runtime without later interactive QA." | Out-File "$env:GITHUB_STEP_SUMMARY" -Append
+          "- Repository master and sound engine were not edited." | Out-File "$env:GITHUB_STEP_SUMMARY" -Append
