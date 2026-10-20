@@ -62,3 +62,13 @@
 
 ## Nhật ký thực thi
 **2026-10-20:** Kiểm tra trực tiếp fork của chủ dự án, xác nhận `master=4c2d471...`. Khởi tạo nhánh ORVIA và tài liệu này, chưa đổi code upstream. **Chưa build hoặc kiểm thử Windows; chưa có installer.** Nhiệm vụ tiếp: chọn builder không tốn phí và có quyền trước khi chạy build.
+
+
+## Lần build Windows baseline #1 (20/10/2026 — đang chạy)
+
+- **Đã đọc nhật ký LUNOR MUSIC / ORVIA trước thao tác**, kiểm tra AGENTS.md, README.md, CMakeLists.txt, Conan profiles + conan.lock, .gitlab-ci.yml và các điều kiện thực thi Windows.
+- Các thiết bị Remote Desktop không online, connector đã hết lượt; không dùng máy người dùng, không yêu cầu CMD hay ghi vào C:.
+- Giấy phép GitHub Actions public standard runners: miễn phí không giới hạn phút cho repo công khai (theo GitHub Docs), không dùng larger/paid runner.
+- Tệp `.github/workflows/orvia-windows-baseline.yml` được tạo **chỉ trên nhánh `feature/orvia-desktop-foundation`** (commit `dc413ca66a960998d9ba0f31552b4d3b9eaf926a`) với push filter chỉ chính tệp workflow và tùy chọn workflow_dispatch. Runner `windows-2025-vs2026` dùng toolchain MSVC 19.5 như upstream `conan/profiles/_msvc`; checkout full submodule; Python pinned requirements, Conan recipes local và lockfile, build CMake + exe nếu đủ môi trường. Timeout tối đa 180 phút; chưa đóng gói phát hành.
+- **Run thật:** https://github.com/Gamevalentine/zrythm/actions/runs/39437210753 (job ID `118677283684`). Phần **checkout submodule, preflight MSVC, Python build tools** đã hoàn thành SUCCESS. Phần Conan dependency đang IN_PROGRESS tại thời điểm cập nhật; native CMake compile chưa bắt đầu. **CHƯA có .exe, chưa xác nhận runtime/âm thanh/VST3**. Cần theo dõi kết quả lần build, sửa build workflow theo log nếu thất bại, rồi chỉ dùng ảnh/video từ native binary chạy thật.
+- **Bảo toàn:** master `4c2d47143da71ab8cb08141890e7b36fe7974312` không thay đổi; mã Zrythm/audio engine/GUI chưa sửa; chỉ thêm tài liệu + workflow build.
