@@ -1,0 +1,94 @@
+# SPDX-FileCopyrightText: © 2026 ORVIA / LUNOR MUSIC contributors
+# SPDX-License-Identifier: LicenseRef-ZrythmLicense
+#
+# One-shot source feasibility check; ONLY changes to this file trigger a run.
+# No fake frontend, no desktop remote streaming, no paid/larger runners.
+name: ORVIA | Qt Zrythm WebAssembly source check
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/orvia-webassembly-port
+    paths:
+      - .github/workflows/orvia-qt-wasm-probe.yml
+      - scripts/orvia-wasm-build.sh
+      - CMakeLists.txt
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orvia-wasm-source-check
+  cancel-in-progress: true
+
+jobs:
+  source-compile-probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      QT_VERSION: "6.11.1"
+      EMSDK_VERSION: "4.0.7"
+      PYTHONUTF8: "1"
+      ORVIA_BUILD_JOBS: "2"
+    steps:
+      - name: Checkout Zrythm source and pinned submodules
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Set up installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install free Qt SDK downloader
+        run: |
+          python -m pip install "aqtinstall>=3.2,<4"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq p7zip-full ninja-build
+
+      - name: Install matching Qt host SDK with CanvasPainter
+        timeout-minutes: 10
+        run: |
+          python -m aqt install-qt linux desktop "$QT_VERSION" linux_gcc_64 \
+            --outputdir "$RUNNER_TEMP/Qt" --modules qtcanvaspainter
+          test -s "$RUNNER_TEMP/Qt/$QT_VERSION/gcc_64/lib/cmake/Qt6/Qt6Config.cmake"
+          test -s "$RUNNER_TEMP/Qt/$QT_VERSION/gcc_64/lib/cmake/Qt6CanvasPainter/Qt6CanvasPainterConfig.cmake"
+
+      - name: Install Qt WebAssembly SDK and CanvasPainter
+        timeout-minutes: 10
+        run: |
+          python -m aqt install-qt all_os wasm "$QT_VERSION" wasm_singlethread \
+            --outputdir "$RUNNER_TEMP/Qt" --modules qtcanvaspainter
+          test -s "$RUNNER_TEMP/Qt/$QT_VERSION/wasm_singlethread/lib/cmake/Qt6/Qt6Config.cmake"
+          test -s "$RUNNER_TEMP/Qt/$QT_VERSION/wasm_singlethread/lib/cmake/Qt6CanvasPainter/Qt6CanvasPainterConfig.cmake"
+
+      - name: Install matching Emscripten SDK
+        timeout-minutes: 10
+        run: |
+          git clone -q --depth 1 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          "$RUNNER_TEMP/emsdk/emsdk" install "$EMSDK_VERSION"
+          "$RUNNER_TEMP/emsdk/emsdk" activate "$EMSDK_VERSION"
+
+      - name: Attempt CMake/compile of ORIGINAL Zrythm source (no mock)
+        timeout-minutes: 15
+        run: |
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          export QT_HOST_PATH="$RUNNER_TEMP/Qt/$QT_VERSION/gcc_64"
+          export QT_WASM_PREFIX="$RUNNER_TEMP/Qt/$QT_VERSION/wasm_singlethread"
+          bash scripts/orvia-wasm-build.sh
+
+      - name: Record what was and was NOT proved
+        if: always()
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ## ORVIA Web — Giai đoạn 1
+          Target is the original C++/Qt/QML Zrythm source, not HTML recreation.
+          Qt 6.11.1 + Qt CanvasPainter SDK + Emscripten 4.0.7 preflight.
+          A green configure/compile proves neither browser launch nor sound.
+          Read the first red step's full log for the exact incompatibility.
+          This job never uploads a demo website or labels the native Windows build as WASM.
+          EOF

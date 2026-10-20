@@ -116,7 +116,9 @@ else()
   set(ZRYTHM_OPTIMIZED_BUILD OFF)
 endif()
 
-if(UNIX AND NOT APPLE)
+# Emscripten defines UNIX but is not GNU/Linux: treating it as Linux
+# incorrectly requires native Freetype/Fontconfig libraries for JUCE.
+if(UNIX AND NOT APPLE AND NOT EMSCRIPTEN)
   set(OS_GNU ON)
 else()
   set(OS_GNU OFF)
@@ -139,6 +141,10 @@ if(WIN32)
   set(OPEN_DIR_CMD "explorer.exe")
 elseif(APPLE)
   set(OPEN_DIR_CMD "open")
+elseif(EMSCRIPTEN)
+  # Browser file picker/persistence will use a browser-specific adapter;
+  # there is no xdg-open command inside the WebAssembly sandbox.
+  set(OPEN_DIR_CMD "")
 else()
   find_program(XDG_OPEN_EXECUTABLE xdg-open REQUIRED)
   set(OPEN_DIR_CMD ${XDG_OPEN_EXECUTABLE})
@@ -814,8 +820,17 @@ target_link_libraries(_zrythm_all_compile_options INTERFACE zrythm::sanitizers)
 
 CPMUsePackageLock(package-lock.cmake)
 
-find_package(nlohmann_json REQUIRED)
-find_package(nlohmann_json_schema_validator REQUIRED)
+# ORVIA WebAssembly feasibility: the native Conan dependency graph is not
+# installed for emcmake builds. Use Zrythm's *existing pinned* CPM definitions
+# for the portable JSON and JSON schema libraries, preserving normal native
+# Conan find_package() behavior unchanged on Windows/Linux/macOS.
+if(EMSCRIPTEN)
+  CPMGetPackage(nlohmann_json)
+  CPMGetPackage(nlohmann_json_schema_validator)
+else()
+  find_package(nlohmann_json REQUIRED)
+  find_package(nlohmann_json_schema_validator REQUIRED)
+endif()
 
 CPMGetPackage(clap)
 CPMGetPackage(clap-helpers)
@@ -826,7 +841,14 @@ include(SetupVst3Sdk)
 
 add_subdirectory(ext)
 
-find_package(SndFile REQUIRED)
+# ORVIA WebAssembly: compile libsndfile for the actual Emscripten target
+# from the existing upstream-pinned CPM declaration. Do not link a host
+# Linux .so into a browser build, and preserve native Conan packaging.
+if(EMSCRIPTEN)
+  CPMGetPackage(SndFile)
+else()
+  find_package(SndFile REQUIRED)
+endif()
 set(HAVE_OPUS TRUE)
 
 # lilv (+ its lv2/serd/sord/sratom/zix chain, from Conan) for native LV2
