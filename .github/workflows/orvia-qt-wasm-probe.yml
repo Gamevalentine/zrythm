@@ -12,6 +12,8 @@ on:
       - feature/orvia-webassembly-port
     paths:
       - .github/workflows/orvia-qt-wasm-probe.yml
+      - scripts/orvia-wasm-build.sh
+      - CMakeLists.txt
 
 permissions:
   contents: read
