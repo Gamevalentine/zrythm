@@ -841,7 +841,14 @@ include(SetupVst3Sdk)
 
 add_subdirectory(ext)
 
-find_package(SndFile REQUIRED)
+# ORVIA WebAssembly: compile libsndfile for the actual Emscripten target
+# from the existing upstream-pinned CPM declaration. Do not link a host
+# Linux .so into a browser build, and preserve native Conan packaging.
+if(EMSCRIPTEN)
+  CPMGetPackage(SndFile)
+else()
+  find_package(SndFile REQUIRED)
+endif()
 set(HAVE_OPUS TRUE)
 
 # lilv (+ its lv2/serd/sord/sratom/zix chain, from Conan) for native LV2
