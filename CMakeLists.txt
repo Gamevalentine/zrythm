@@ -116,7 +116,9 @@ else()
   set(ZRYTHM_OPTIMIZED_BUILD OFF)
 endif()
 
-if(UNIX AND NOT APPLE)
+# Emscripten defines UNIX but is not GNU/Linux: treating it as Linux
+# incorrectly requires native Freetype/Fontconfig libraries for JUCE.
+if(UNIX AND NOT APPLE AND NOT EMSCRIPTEN)
   set(OS_GNU ON)
 else()
   set(OS_GNU OFF)
@@ -139,6 +141,10 @@ if(WIN32)
   set(OPEN_DIR_CMD "explorer.exe")
 elseif(APPLE)
   set(OPEN_DIR_CMD "open")
+elseif(EMSCRIPTEN)
+  # Browser file picker/persistence will use a browser-specific adapter;
+  # there is no xdg-open command inside the WebAssembly sandbox.
+  set(OPEN_DIR_CMD "")
 else()
   find_program(XDG_OPEN_EXECUTABLE xdg-open REQUIRED)
   set(OPEN_DIR_CMD ${XDG_OPEN_EXECUTABLE})
