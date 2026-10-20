@@ -66,3 +66,21 @@ Created `scripts/orvia-wasm-build.sh` (commit `83a769a50544b31f628c32b9a8f84acf1
 **Run #4** https://github.com/Gamevalentine/zrythm/actions/runs/39452016659 queued at time of entry. Anticipated major blocker: `find_package(lilv REQUIRED)` and `src/plugins/CMakeLists.txt` unconditionally compile LV2 native plugin sources and link `lilv::lilv`; `src/gui/backend/zrythm_application.cpp` initializes JUCE desktop audio devices, scanning and native plugin managers. These need a real browser-adapter design rather than fake stubbed UI; no architecture port has been claimed.
 
 **Status remains NOT BUILT:** no .wasm bundle, no browser DAW, no screenshots claimed as DAW. All source changes in separate WebAssembly branch; no production/master edits.
+
+
+## GĐ1 — lần kiểm thử #4 và kết luận rào cản kiến trúc (20/10/2026)
+
+**Run #4 — verified:** https://github.com/Gamevalentine/zrythm/actions/runs/39452016659 (completed / failure). PASS all Qt 6.11.1 host+Wasm CanvasPainter and Emscripten 4.0.7 steps. Source CMake PASS previously missing JSON, desktop OS detection, and **SndFile**: log says `CPM: Adding package SndFile@1.2.2` and libsndfile configure checks run on Emscripten. CMake now fails `CMakeLists.txt:856 find_package(lilv REQUIRED)`, missing `lilvConfig.cmake`.
+
+### Why stopping at lilv rather than cheating with a dummy target
+The problem is structural, not just an absent CMake package. The original `src/plugins/CMakeLists.txt` unconditionally compiles `lv2_discovery.cpp`, `lv2_plugin.cpp`, `lv2_plugin_format.cpp`, `lv2_world.cpp` and VST3 host native files, and links `lilv::lilv` PUBLIC (and copies LV2 native spec bundle files). `src/gui/backend/zrythm_application.cpp` constructs hardware audio via JUCE devices, scans host plugins and requires LV2 specification bundles on startup. Browser execution cannot use native installed LV2/VST3/Kontakt binaries.
+
+**No fake workaround:** Do not create an empty `lilv::lilv` interface library or skip `find_package` merely to get a green CMake status. That would leave the real application unable to link or execute. Do not invent a standalone HTML UI. The needed next engineering work is an actual browser backend while retaining the existing Zrythm Qt/QML views and business models:
+1. A WebAssembly-only plugin/runtime abstraction separating native LV2/VST3 module scanning, loading, and host UI from the program's core project/track data structures. Native branches must retain the real plugin host and original QA.
+2. A browser-compatible JUCE/Qt event+audio backend (AudioWorklet output), browser-local file persistence instead of native filesystem paths, and imports/exports bridged securely.
+3. Reattempt CMake and actual `zrythm` target compilation until a genuine Wasm binary exists, then verify browser UI + audio; never publish an image/progress page instead.
+
+### Stage 1 status
+- Verified: WebAssembly SDK including Qt CanvasPainter is real and installable; Zrythm CMake recognizes Emscripten, and three *build configuration* blockers have targeted fixes on web branch only. All 4 CI attempts are traceable in GitHub Actions.
+- Not verified: `lilv`/VST3/JUCE browser host support, actual Zrythm GUI .wasm build, loading in Chrome, interactive MIDI/audio, or Cloudflare web deployment. **GIAI ĐOẠN 1 CHƯA HOÀN THÀNH.**
+- Master, production, SoundCraft fallback and native Windows branch remain untouched.
